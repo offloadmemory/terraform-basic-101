@@ -1,0 +1,31 @@
+# Pre-commit hooks — the same quality gates used by the terraform-101 repo,
+# simplified for a single-environment repository.
+#
+# Install once:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run on demand:
+#   pre-commit run --all-files
+#
+# Hooks (order matters):
+#   1. terraform_fmt      — enforce canonical HCL formatting
+#   2. terraform_validate — init -backend=false + validate each workspace
+#   3. terraform_tflint   — static analysis of Terraform code
+#
+# (terraform_docs is intentionally omitted here: this repo calls modules from
+# the Terraform Registry and has no local modules whose READMEs need table
+# generation. See docs/CONCEPTS.md.)
+repos:
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.96.0
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+        args:
+          - --args=-no-color
+          - --init-args=-backend=false
+      - id: terraform_tflint
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
+          - --args=--call-module-type=all

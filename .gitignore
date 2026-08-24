@@ -1,0 +1,16 @@
+# Local Terraform working directory (downloaded providers & modules live here).
+# This is created by `terraform init` and must never be committed.
+.terraform/
+
+# State files — never commit these! They can contain secrets.
+*.tfstate
+*.tfstate.*
+
+# Crash logs from terraform
+crash.log
+
+# Temporary lock files created while terraform updates the lock file
+**/.terraform.lock.hcl.tmp
+
+# macOS noise
+.DS_Store

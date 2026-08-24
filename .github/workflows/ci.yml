@@ -1,0 +1,36 @@
+name: terraform-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: fmt + validate + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.4
+
+      - name: Terraform fmt (all workspaces)
+        run: terraform fmt --recursive -check
+
+      - name: Terraform validate (all workspaces, no backend)
+        run: |
+          for dir in environments/bootstrap environments/dev/network environments/dev/database environments/dev/ecs; do
+            echo "==> validate ${dir}"
+            (cd "${dir}" && terraform init -backend=false && terraform validate)
+          done
+
+      - name: TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.52.0
+      - run: tflint --recursive --init && tflint --recursive

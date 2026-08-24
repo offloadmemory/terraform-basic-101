@@ -1,0 +1,38 @@
+# terraform-docs configuration.
+#
+# Kept for parity with the terraform-101 repo standards. In this repository
+# there are no local modules, so terraform-docs has nothing to generate —
+# module documentation is maintained by the Terraform Registry (each registry
+# module page renders its own Inputs/Outputs tables). The config exists so
+# that if you ever add a local module, the hook behaves identically to the
+# standard setup.
+formatter: markdown table
+
+content: |-
+  {{ .Requirements }}
+  {{ .Resources }}
+  {{ .Inputs }}
+  {{ .Outputs }}
+
+output:
+  file: README.md
+  mode: inject
+
+sort:
+  enabled: true
+  by: required
+
+settings:
+  anchor: true
+  color: true
+  default: true
+  description: false
+  escape: true
+  hide-empty: true
+  html: true
+  indent: 2
+  lockfile: true
+  read-comments: true
+  required: true
+  sensitive: true
+  type: true
