@@ -18,11 +18,11 @@ previous run) already owns `terraform-basic-101-tfstate`.
 **Fix:** pick a unique name (e.g. add your initials), then change it in
 **two places**:
 
-1. `environments/bootstrap/terraform.tfvars` → `state_bucket_name`
-2. every `backend.tf` → the `bucket` line (network, database, ecs)
+1. `infra/bootstrap/terraform.tfvars` → `state_bucket_name`
+2. `infra/backend.tf` → the `bucket` line
 
-Then `terraform apply` again in bootstrap, and `terraform init` again in the
-other workspaces (they re-read the backend).
+Then `terraform apply` again in bootstrap, and `terraform init` again in
+`infra/` (it re-reads the backend).
 
 ---
 
@@ -34,8 +34,8 @@ Error message: ConditionalCheckFailed: The conditional request failed
 ```
 
 **Cause:** another `terraform` run (yours or a teammate's) is currently
-planning/applying the same workspace. S3-native locking (`.tflock`) prevents
-two runs from clobbering state.
+planning/applying the same configuration. S3-native locking (`.tflock`)
+prevents two runs from clobbering state.
 
 **Fix (do these in order):**
 
@@ -48,7 +48,7 @@ two runs from clobbering state.
    ```
 
    Only force-unlock when you're sure nobody is actively running Terraform
-   on that workspace.
+   on that configuration.
 
 ---
 
@@ -63,7 +63,7 @@ initializing first.
 terraform init   # downloads providers + modules, sets up the backend
 ```
 
-Run it in every workspace you touch. The Makefile scripts do it for you.
+Run it in every configuration you touch. The Makefile scripts do it for you.
 
 ---
 
@@ -85,25 +85,26 @@ older inputs may have been renamed.
 
 ---
 
-## 5. `terraform_remote_state` errors / `The specified key does not exist`
+## 5. Applying `infra` before bootstrap / "S3 bucket does not exist"
 
 ```
-Error: error loading state: S3 bucket does not exist ...
-  OR
-Error: failed to load state: no such object: dev/network/terraform.tfstate
+Error: Backend initialization failed:
+  Error: error loading state: S3 bucket does not exist ...
 ```
 
-**Cause:** `database` or `ecs` is being planned/applied **before** `network`
-(or before bootstrap created the bucket).
+**Cause:** you ran `terraform init` in `infra/` before `infra/bootstrap` was
+applied — the state bucket doesn't exist yet.
 
-**Fix:** apply in dependency order:
+**Fix:** run the bootstrap first:
 
 ```bash
-make apply   # bootstrap → network → database → ecs
+cd infra/bootstrap && terraform init && terraform apply
+cd .. && terraform init
 ```
 
-The `terraform_remote_state` data source *requires* the network state file
-to already exist in S3.
+(This repo has **no `terraform_remote_state` anywhere** — `database.tf` and
+`ecs.tf` read the VPC directly from `module.vpc.*`, so the old "network
+state file not found" failure mode doesn't exist here.)
 
 ---
 
@@ -116,8 +117,8 @@ minutes).
 **Fix:** wait 2–3 minutes, refresh. Watch it come up:
 
 ```bash
-aws ecs describe-services --cluster basic-101-dev-cluster \
-  --services basic-101-dev-service --region us-east-1 \
+aws ecs describe-services --cluster basic-101-cluster \
+  --services basic-101-service --region us-east-1 \
   --query "services[0].deployments[0].desiredCount" --output text
 ```
 
@@ -129,14 +130,14 @@ the target-group health check fails forever.
 **Fix:** point at any public image that serves HTTP on port 80:
 
 ```hcl
-# environments/dev/ecs/terraform.tfvars
+# infra/terraform.tfvars
 container_image = "nginxdemos/hello:latest"
 ```
 
 then:
 
 ```bash
-cd environments/dev/ecs && terraform apply
+cd infra && terraform apply
 ```
 
 ---
@@ -147,42 +148,42 @@ cd environments/dev/ecs && terraform apply
 Error: ... cannot be deleted: the resource is protected by deletion protection
 ```
 
-**Cause:** `db_deletion_protection = true` in `database/terraform.tfvars` —
+**Cause:** `db_deletion_protection = true` in `infra/terraform.tfvars` —
 set for production hardening.
 
 **Fix:** temporarily set it to `false`, `apply`, then destroy. (In this
-repo the dev defaults are already destroy-friendly, so you'll only hit this
-if you copied the environment and hardened it.)
+repo the defaults are already destroy-friendly, so you'll only hit this if
+you copied `infra/` to a new environment and hardened it.)
 
 ---
 
-## 8. Destroy order matters
+## 8. Destroying the bucket while the stack is still up / "bucket not empty"
 
-Destroying `network` while `database`/`ecs` still exist fails:
+If you destroy `infra/bootstrap` while `infra` still exists, the bucket
+still holds the state file and `terraform destroy` refuses.
 
-```
-Error: error deleting subnet: DependencyViolation
-```
-
-**Cause:** the VPC still has resources attached to it.
-
-**Fix:** always destroy in reverse order:
+**Fix:** always destroy the stack first, then (optionally) the bucket:
 
 ```bash
-make destroy   # ecs → database → network (bootstrap skipped by default)
+make destroy                            # destroys infra/ (bootstrap skipped)
+./scripts/destroy.sh --include-bootstrap # only when you're sure
 ```
+
+Inside `infra/`, `terraform destroy` orders everything itself (ECS → DB →
+network), so you can't hit the old "delete the VPC while it has resources"
+`DependencyViolation` error.
 
 ---
 
 ## 9. `terraform output` shows nothing / "no outputs defined"
 
-**Cause:** you're in the wrong workspace folder (outputs live in the
-workspace that declared them), or the workspace was never applied.
+**Cause:** you're in the wrong folder (outputs live in the configuration
+that declared them), or the configuration was never applied.
 
 **Fix:**
 
 ```bash
-cd environments/dev/ecs
+cd infra
 terraform apply        # if not applied yet
 terraform output alb_dns_name
 ```

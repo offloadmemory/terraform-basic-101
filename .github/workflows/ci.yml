@@ -19,12 +19,12 @@ jobs:
         with:
           terraform_version: 1.13.4
 
-      - name: Terraform fmt (all workspaces)
+      - name: Terraform fmt (all configurations)
         run: terraform fmt --recursive -check
 
-      - name: Terraform validate (all workspaces, no backend)
+      - name: Terraform validate (all configurations, no backend)
         run: |
-          for dir in environments/bootstrap environments/dev/network environments/dev/database environments/dev/ecs; do
+          for dir in infra/bootstrap infra; do
             echo "==> validate ${dir}"
             (cd "${dir}" && terraform init -backend=false && terraform validate)
           done

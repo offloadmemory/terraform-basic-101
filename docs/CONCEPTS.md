@@ -20,8 +20,8 @@ makes the cloud match your file.
 ## 2. Providers
 
 A provider is a plugin that lets Terraform talk to a specific cloud. AWS,
-Azure, GCP, Kubernetes, GitHub… each has one. In this repo every workspace
-has a `providers.tf`:
+Azure, GCP, Kubernetes, GitHub… each has one. In this repo every
+configuration has a `providers.tf`:
 
 ```hcl
 provider "aws" {
@@ -113,8 +113,7 @@ Rules of thumb (they are enforced by tflint in CI):
 ## 6. Outputs
 
 The "return values" of a Terraform configuration. When you run `terraform
-output`, or when another workspace reads this workspace's state, these are
-what you get:
+output`, these are what you get:
 
 ```hcl
 output "vpc_id" {
@@ -129,7 +128,7 @@ for anything that smells like a credential.
 
 ## 7. State — the most important idea
 
-Terraform keeps a **state file** for every workspace. The state is
+Terraform keeps a **state file** for every configuration. The state is
 Terraform's memory of what it created:
 
 - it knows resource A in AWS is `aws_s3_bucket` with id `x`;
@@ -143,14 +142,15 @@ that leaked into a resource attribute) — that is why:
    repo),
 2. that bucket has versioning + encryption + public access blocked,
 3. `*.tfstate*` is in `.gitignore` (never commit state!),
-4. we read other workspaces' state with `data "terraform_remote_state"`
-   (section 9) instead of copy-pasting values.
+4. we keep everything in **one** configuration so modules reference each
+   other directly — no cross-state reads at all (sections 8–9).
 
 ### Local vs remote state
 
-- **bootstrap** uses **local state** (a file on your disk). It must, because
-  the S3 bucket doesn't exist yet — the chicken-and-egg of section 10.
-- **network / database / ecs** use **remote state** in the S3 bucket.
+- **bootstrap** (`infra/bootstrap`) uses **local state** (a file on your
+  disk). It must, because the S3 bucket doesn't exist yet — the
+  chicken-and-egg of section 10.
+- **infra** (the whole stack) uses **remote state** in the S3 bucket.
 
 ### Locking
 
@@ -163,9 +163,14 @@ TROUBLESHOOTING for the exact error.
 ## 8. Data sources
 
 A data source is a **read-only** query — Terraform fetches something that
-already exists, without changing it. In this repo, `database` and `ecs`
-need values from the `network` workspace (subnet IDs, VPC ID). They fetch
-them from the network's *state file*:
+already exists, without changing it.
+
+> **Rule of thumb:** resources create things; data sources read things.
+
+**This repository uses no data sources at all** — and that is deliberate.
+In a multi-workspace repo, `database` and `ecs` would need values from the
+`network` *workspace* (subnet IDs, VPC ID) and would fetch them from its
+separate state file:
 
 ```hcl
 data "terraform_remote_state" "network" {
@@ -177,25 +182,25 @@ data "terraform_remote_state" "network" {
     profile = "dev"
   }
 }
-
-# then use it like:
-subnet_ids = data.terraform_remote_state.network.outputs.private_subnet_ids
 ```
 
-> **Rule of thumb:** resources create things; data sources read things. If
-> you need an ID of something *another workspace* created, you read its
-> state.
+That is the *fragile* way — if the network state file is ever deleted, the
+database breaks. Here, everything lives in **one configuration**, so the
+database and ECS just reference the VPC module's outputs directly:
 
-This is the *simplest* way Terraform shares values between workspaces. (It
-is also the *fragile* way — if the network state file is ever deleted, the
-database breaks. `terraform-101` talks about the enterprise alternatives:
-Terragrunt `dependency` blocks, or publishing outputs to SSM.)
+```hcl
+# database.tf — no data source, no state-file read
+subnet_ids = module.vpc.private_subnets
+```
 
-## 9. Workspaces — one folder, one state
+Same result, nothing to break. (`terraform-101` shows the enterprise
+alternatives: Terragrunt `dependency` blocks, or publishing outputs to SSM.)
+
+## 9. One configuration — one folder, one state
 
 Terraform has a feature literally called *workspaces* — but the enterprise
 standard (and this repo) doesn't use it for environments. Instead: **one
-folder per workspace = one independent Terraform configuration = one state
+folder per configuration = one independent Terraform root = one state
 file**.
 
 Why folders instead of `terraform workspace`? HashiCorp's own guidance says
@@ -204,8 +209,15 @@ access, and blast radius*. A separate folder makes it impossible to
 accidentally run a dev plan against prod state. It's simpler to teach and
 safer to run.
 
+This repo goes one step further: even *within* the single environment there
+is exactly **one** configuration (`infra/`). The resources are split by
+concern into `network.tf`, `database.tf`, `ecs.tf` — but they are one
+config, one `terraform init`, one state file. That is the "file-based"
+structure: the same readability as separate workspaces, but a single apply
+that orders everything itself.
+
 If you later want a `staging` and `prod`:
-1. copy `dev` → `staging`,
+1. copy `infra` → `staging-infra`,
 2. change the state bucket key + profile + tfvars,
 3. done — no code changes.
 
@@ -215,11 +227,10 @@ obvious.
 
 ## 10. The bootstrap chicken-and-egg
 
-Every workspace's `backend.tf` points at the S3 bucket
-`terraform-basic-101-tfstate`. But **you can't run Terraform against a
-bucket that doesn't exist yet**. Something must create the bucket first —
-that is `environments/bootstrap`, which has **no backend at all** and keeps
-its state locally.
+`infra/backend.tf` points at the S3 bucket `terraform-basic-101-tfstate`.
+But **you can't run Terraform against a bucket that doesn't exist yet**.
+Something must create the bucket first — that is `infra/bootstrap`, which
+has **no backend at all** and keeps its state locally.
 
 ```
 bootstrap (local state)  →  creates the bucket  →  everything else uses it
@@ -231,7 +242,7 @@ That's why the quick start always starts with bootstrap.
 
 | Command | What it does | When you run it |
 |---|---|---|
-| `terraform init` | Downloads providers + modules, sets up the backend | Every time you start a new workspace / clone the repo |
+| `terraform init` | Downloads providers + modules, sets up the backend | Every time you clone the repo / change the backend |
 | `terraform plan` | Compares state vs. code, shows the diff. **Nothing changes.** | Before every apply — this is your safety check |
 | `terraform apply` | Makes AWS match the code | When you're happy with the plan |
 | `terraform destroy` | Deletes every resource the code created | Demo over. Seriously. It costs money. |

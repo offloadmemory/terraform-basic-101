@@ -1,9 +1,8 @@
-# Network workspace — the VPC everything else lives in.
+# Network resources — the VPC everything else lives in.
 #
-# This is the FIRST component to apply after bootstrap. It uses the official
-# Terraform Registry module terraform-aws-modules/vpc/aws, so there is no
-# hand-written network module in this repo — the registry module creates the
-# VPC, subnets, internet gateway, NAT gateway and route tables for us.
+# This uses the official Terraform Registry module terraform-aws-modules/vpc/aws,
+# so there is no hand-written network module in this repo — the registry module
+# creates the VPC, subnets, internet gateway, NAT gateway and route tables for us.
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 6.7.0"

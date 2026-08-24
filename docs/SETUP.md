@@ -44,16 +44,17 @@ The `dev` profile needs permission to create (and later delete):
 For a demo, an AdministratorAccess policy is fine. Least-privilege
 instructions are out of scope for a 101 repo — that's an enterprise topic.
 
-> ⚠ The profile name `dev` is used by *every* workspace in this repo
-> (`providers.tf` and `backend.tf`). If your profile is named differently,
-> change `profile = "dev"` in every `providers.tf` and `backend.tf`.
+> ⚠ The profile name `dev` is used by both configurations in this repo
+> (`infra/providers.tf`, `infra/backend.tf`, and `infra/bootstrap/*.tf`).
+> If your profile is named differently, change `profile = "dev"` in
+> `infra/providers.tf`, `infra/backend.tf`, and `infra/bootstrap/terraform.tfvars`.
 
 ## One-time bootstrap
 
 The state bucket must exist before anything else can run:
 
 ```bash
-cd environments/bootstrap
+cd infra/bootstrap
 terraform init
 terraform apply
 ```
@@ -61,21 +62,20 @@ terraform apply
 This creates `terraform-basic-101-tfstate` — versioned, encrypted, private.
 Bucket names are **globally unique**; if it's taken you'll see
 `BucketAlreadyExists`. Fix by changing `state_bucket_name` in
-`bootstrap/terraform.tfvars` **and** the bucket in every `backend.tf`
-(network, database, ecs).
+`infra/bootstrap/terraform.tfvars` **and** the bucket in `infra/backend.tf`.
 
 ## Deploy (the demo)
 
 ```bash
-cd environments/dev/network  && terraform init && terraform apply
-cd environments/dev/database && terraform init && terraform apply
-cd environments/dev/ecs      && terraform init && terraform apply
+cd infra
+terraform init
+terraform apply
 
-cd environments/dev/ecs
 terraform output alb_dns_name   # copy this URL into a browser
 ```
 
-Or with the Makefile (same order, less typing):
+One configuration, one apply — Terraform builds the VPC, the database, and
+the ECS service in the right order for you. Or with the Makefile:
 
 ```bash
 make apply
@@ -83,7 +83,7 @@ make apply
 
 The ECS service pulls a small "hello world" container image from Docker Hub
 (`kartikmanimuthu/hello-101`). If the image name is ever removed, change
-`container_image` in `dev/ecs/terraform.tfvars` to any public image that
+`container_image` in `infra/terraform.tfvars` to any public image that
 serves HTTP on port 80.
 
 ## Costs
@@ -106,15 +106,14 @@ done — every hour it stays up costs money.**
 ```bash
 make destroy
 # optional: also remove the state bucket
-./scripts/destroy-all.sh --include-bootstrap
+./scripts/destroy.sh --include-bootstrap
 ```
 
 Or manually, in reverse dependency order:
 
 ```bash
-cd environments/dev/ecs      && terraform destroy -auto-approve
-cd environments/dev/database && terraform destroy -auto-approve
-cd environments/dev/network  && terraform destroy -auto-approve
+cd infra && terraform destroy -auto-approve
+cd infra/bootstrap && terraform destroy -auto-approve
 ```
 
 Notes:
@@ -122,9 +121,9 @@ Notes:
 - `database` is created with `skip_final_snapshot = true` and
   `deletion_protection = false`, so `destroy` just works — no snapshot
   prompt, no locked instance.
-- `bootstrap` is **not** destroyed by `make destroy` by default: removing
-  the bucket would delete your state history. Only pass `--include-bootstrap`
-  when you're sure.
+- `infra/bootstrap` is **not** destroyed by `make destroy` by default:
+  removing the bucket would delete your state history. Only pass
+  `--include-bootstrap` when you're sure.
 
 ## Local quality gates (optional but recommended)
 

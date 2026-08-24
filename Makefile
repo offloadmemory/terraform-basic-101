@@ -4,18 +4,18 @@
 fmt:
 	terraform fmt --recursive
 
-## validate: offline check — fmt + init -backend=false + validate on every workspace
+## validate: offline check — fmt + init -backend=false + validate on every configuration
 validate:
-	@./scripts/validate-all.sh
+	@./scripts/validate.sh
 
-## plan: real init + plan on every workspace (needs credentials)
+## plan: real init + plan on both configurations (needs credentials)
 plan:
-	@./scripts/plan-all.sh
+	@./scripts/plan.sh
 
-## apply: apply every workspace in dependency order (needs credentials)
+## apply: apply both configurations in dependency order (needs credentials)
 apply:
-	@./scripts/apply-all.sh
+	@./scripts/apply.sh
 
-## destroy: teardown every workspace in reverse order (needs credentials)
+## destroy: teardown the stack in reverse order (needs credentials)
 destroy:
-	@./scripts/destroy-all.sh
+	@./scripts/destroy.sh

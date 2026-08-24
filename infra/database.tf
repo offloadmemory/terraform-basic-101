@@ -1,35 +1,20 @@
-# Database workspace — a PostgreSQL RDS instance from the official
+# Database resources — a PostgreSQL RDS instance from the official
 # Terraform Registry module terraform-aws-modules/rds/aws.
 #
-# Notice what is NOT here: no hand-written module, no network code, no
-# security-group code. The RDS module creates the DB subnet group and
-# security group for us.
-#
-# The database needs to know which subnets/security group to use, and those
-# live in the NETWORK workspace's state. We read them at run time with a
-# `terraform_remote_state` data source — this is how Terraform shares values
-# between separate workspaces (each with its own state file).
-
-# Pull the network outputs from the network workspace's state file in S3.
-data "terraform_remote_state" "network" {
-  backend = "s3"
-  config = {
-    bucket       = "terraform-basic-101-tfstate"
-    key          = "dev/network/terraform.tfstate"
-    region       = "us-east-1"
-    profile      = "dev"
-    use_lockfile = true
-  }
-}
+# Notice what is NOT here: no hand-written module, no separate state file, no
+# terraform_remote_state. Because everything lives in ONE Terraform
+# configuration, the database references the VPC resources directly
+# (module.vpc.*) and Terraform figures out the dependency order for us.
+# The RDS module creates the DB subnet group and security group for us.
 
 # A small security group that only allows the app (ECS) to reach the DB.
 module "db_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "~> 6.0.0"
 
-  name        = "basic-101-dev-db-sg"
-  description = "Security group for the basic-101 dev database"
-  vpc_id      = data.terraform_remote_state.network.outputs.vpc_id
+  name        = "basic-101-db-sg"
+  description = "Security group for the basic-101 database"
+  vpc_id      = module.vpc.vpc_id
 
   # Allow traffic from anywhere INSIDE the VPC (the app talks to the DB
   # over the private subnets, which are inside the VPC CIDR).
@@ -39,7 +24,7 @@ module "db_sg" {
       from_port   = 5432
       to_port     = 5432
       ip_protocol = "tcp"
-      cidr_ipv4   = data.terraform_remote_state.network.outputs.vpc_cidr_block
+      cidr_ipv4   = module.vpc.vpc_cidr_block
     }
   }
 
@@ -77,10 +62,10 @@ module "db" {
 
   vpc_security_group_ids = [module.db_sg.id]
 
-  # Create a DB subnet group from the network workspace's private subnets.
+  # Create a DB subnet group from the VPC's private subnets.
   create_db_subnet_group = true
   db_subnet_group_name   = var.db_subnet_group_name
-  subnet_ids             = data.terraform_remote_state.network.outputs.private_subnet_ids
+  subnet_ids             = module.vpc.private_subnets
 
   backup_retention_period = var.db_backup_retention_period
   skip_final_snapshot     = var.db_skip_final_snapshot

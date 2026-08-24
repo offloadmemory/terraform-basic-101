@@ -1,24 +1,13 @@
-# ECS workspace — the app itself: an ECS Fargate service behind an ALB.
+# ECS resources — the app itself: an ECS Fargate service behind an ALB.
 #
-# Every service component here is a Terraform Registry module — no custom
-# code. This workspace reads the network outputs from the network workspace's
-# state (same pattern as the database workspace) and creates:
+# Every component is a Terraform Registry module — no custom code:
 #
 #   terraform-aws-modules/ecs/aws//modules/cluster   → the cluster
 #   terraform-aws-modules/alb/aws                   → the load balancer
 #   terraform-aws-modules/ecs/aws//modules/service  → the running service
-
-# Pull the network outputs (subnet IDs, VPC ID) from the network workspace.
-data "terraform_remote_state" "network" {
-  backend = "s3"
-  config = {
-    bucket       = "terraform-basic-101-tfstate"
-    key          = "dev/network/terraform.tfstate"
-    region       = "us-east-1"
-    profile      = "dev"
-    use_lockfile = true
-  }
-}
+#
+# The network resources (module.vpc) are referenced directly — no
+# terraform_remote_state, because everything shares one state file.
 
 # 1. The cluster — a Fargate-ready ECS cluster with its CloudWatch log group.
 module "ecs_cluster" {
@@ -43,8 +32,8 @@ module "alb" {
 
   name               = var.alb_name
   load_balancer_type = "application"
-  vpc_id             = data.terraform_remote_state.network.outputs.vpc_id
-  subnets            = data.terraform_remote_state.network.outputs.public_subnet_ids
+  vpc_id             = module.vpc.vpc_id
+  subnets            = module.vpc.public_subnets
 
   # Listen on port 80 and forward to the target group "ecs" (created below).
   security_group_ingress_rules = {
@@ -105,9 +94,9 @@ module "ecs_service" {
 
   # The container lives in the private subnets and is reached only through
   # the load balancer.
-  subnet_ids       = data.terraform_remote_state.network.outputs.private_subnet_ids
+  subnet_ids       = module.vpc.private_subnets
   assign_public_ip = false
-  vpc_id           = data.terraform_remote_state.network.outputs.vpc_id
+  vpc_id           = module.vpc.vpc_id
 
   # The module creates a security group for the service that only allows
   # traffic from the ALB security group.
